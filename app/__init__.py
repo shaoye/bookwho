@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, jsonify
 from config import config
 from flask_sqlalchemy import SQLAlchemy
 from flask_marshmallow import Marshmallow
@@ -19,7 +19,16 @@ def create_app(config_name='default'):
     db.init_app(app)
     ma.init_app(app)
 
-    from .auth import auth_blueprint as auth_blueprint
-    app.register_blueprint(auth_blueprint)
+    from .api import api_blueprint
+    app.register_blueprint(api_blueprint)
+
+    @app.route('/')
+    def index():
+        return jsonify({'message': 'Hello world!'}), 200
+
+    @app.before_first_request
+    def create_tables():
+        db.drop_all()
+        db.create_all()
 
     return app
