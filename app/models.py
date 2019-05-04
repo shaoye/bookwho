@@ -1,5 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
+import jwt
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from . import db, ma
@@ -35,6 +36,29 @@ class User(db.Model):
     def find_by_email(email):
         return User.query.filter_by(email=email).first()
 
+    def encode_token(self, secret):
+        payload = {
+            'exp': datetime.utcnow() + timedelta(minutes=15),
+            'iat': datetime.utcnow(),
+            'sub': self.id
+        }
+        # https://stackoverflow.com/questions/32017527/access-config-values-in-flask-from-other-files
+        return jwt.encode(
+            payload,
+            secret,
+            algorithm='HS256'
+        ).decode()  # 坑
+
+    @staticmethod
+    def decode_token(token, secret):
+        try:
+            payload = jwt.decode(token, secret)
+            return 'Success'
+        except jwt.ExpiredSignatureError:
+            return 'Signature expired.'
+        except jwt.InvalidTokenError:
+            return 'Invalid token.'
+
 
 class Role(db.Model):
     __tablename__ = 'roles'
@@ -50,6 +74,24 @@ class Role(db.Model):
                 continue
             db.session.add(Role(name=r))
         db.session.commit()
+
+
+class BlacklistToken(db.Model):
+    __tablename__ = 'blacklist_tokens'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    token = db.Column(db.String(255), nullable=False)
+
+    def save_to_db(self):
+        db.session.add(self)
+        db.session.commit()
+
+    @staticmethod
+    def has_token(token):
+        res = BlacklistToken.query.filter_by(token=token).first()
+        if not res:
+            return False
+        return True
 
 
 # https://marshmallow-sqlalchemy.readthedocs.io/en/latest/index.html#generate-marshmallow-schemas
