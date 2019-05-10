@@ -7,13 +7,15 @@ verify_ssl = true
 autopep8 = "*"
 
 [packages]
-flask-marshmallow = "*"
 flask-sqlalchemy = "*"
-marshmallow-sqlalchemy = "*"
 pyjwt = "*"
 flask = "*"
 flask-restful = "*"
+marshmallow = "*"
 webargs = "*"
 
 [requires]
 python_version = "3.7"
+
+[pipenv]
+allow_prereleases = true

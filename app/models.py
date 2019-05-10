@@ -2,8 +2,8 @@ from datetime import datetime, timedelta
 
 import jwt
 from werkzeug.security import generate_password_hash, check_password_hash
-
-from . import db, ma
+from marshmallow import Schema, fields
+from . import db
 
 
 class User(db.Model):
@@ -14,8 +14,22 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     # https://docs.sqlalchemy.org/en/13/core/defaults.html#python-executed-functions
     date_created = db.Column(db.DateTime(), default=datetime.utcnow)  # not utcnow()
+
     role_id = db.Column(db.Integer, db.ForeignKey('roles.id'))
-    role = db.relationship('Role', backref='users')  # bind `users` attribute to `Role`
+
+    events = db.relationship(
+        'Event',
+        backref='provider',
+        cascade='all, delete-orphan',
+        order_by='desc(Event.date_created)'
+    )
+
+    appointments = db.relationship(
+        'Appointment',
+        backref='booker',
+        cascade='all, delete-orphan',
+        order_by='desc(Appointment.start_time)'
+    )
 
     def save_to_db(self):
         db.session.add(self)
@@ -53,11 +67,11 @@ class User(db.Model):
     def decode_token(token, secret):
         try:
             payload = jwt.decode(token, secret)
-            return 'Success'
+            return 'Success', payload
         except jwt.ExpiredSignatureError:
-            return 'Signature expired.'
+            return 'Signature expired.', None
         except jwt.InvalidTokenError:
-            return 'Invalid token.'
+            return 'Invalid token.', None
 
 
 class Role(db.Model):
@@ -65,6 +79,8 @@ class Role(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(255), unique=True, nullable=False)
+    # bind `role` attribute to `User`
+    users = db.relationship('User', backref='role')
 
     @staticmethod
     def insert_roles():
@@ -94,34 +110,51 @@ class BlacklistToken(db.Model):
         return True
 
 
-# appointment - schedule 一对多
-# a:
-# .
-# .
-# .
-# .
-# .
 class Event(db.Model):  # eg:  Office Hour / Meetings
     __tablename__ = 'events'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(255), unique=True, nullable=False)
     description = db.Column(db.Text())  # description by event provider
-    # user - events 一对多
+    date_created = db.Column(
+        db.DateTime(), default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
     provider_id = db.Column(db.Integer, db.ForeignKey('users.id'))
-    provider = db.relationship('User', backref='events')
+
+    schedules = db.relationship(
+        'Schedule',
+        backref='event',
+        cascade='all, delete-orphan',
+        order_by='desc(Schedule.start_time)'
+    )
+
+    def save_to_db(self):
+        db.session.add(self)
+        db.session.commit()
 
 
 class Schedule(db.Model):  # eg: 6月4日-8点到12点 / 6月5日-14点到18点
     __tablename__ = 'schedules'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    # day = db.Column(db.Enum('',''), nullable=False)
     start_time = db.Column(db.DateTime(), nullable=False)
     end_time = db.Column(db.DateTime(), nullable=False)
-    # event - schedules 一对多
+
     event_id = db.Column(db.Integer, db.ForeignKey('events.id'))
-    event = db.relationship('Event', backref='schedules')
+
+    appointments = db.relationship(
+        'Appointment',
+        backref='schedule',
+        cascade='all, delete-orphan',
+        order_by='desc(Appointment.start_time)'
+    )
+
+    # https://docs.sqlalchemy.org/en/13/orm/cascades.html#cascades
+
+    def save_to_db(self):
+        db.session.add(self)
+        db.session.commit()
 
 
 class Appointment(db.Model):  # eg: 6月4日 8.30到9.30
@@ -131,22 +164,48 @@ class Appointment(db.Model):  # eg: 6月4日 8.30到9.30
     message = db.Column(db.Text())  # booker's message to provider
     start_time = db.Column(db.DateTime(), nullable=False)
     end_time = db.Column(db.DateTime(), nullable=False)
-    # schedule - appointments 一对多
+
     schedule_id = db.Column(db.Integer, db.ForeignKey('schedules.id'))
-    schedule = db.relationship('Schedule', backref='appointments')
-    # user - appointments 一对多
     booker_id = db.Column(db.Integer, db.ForeignKey('users.id'))
-    booker = db.relationship('User', backref='appointments')
+
+    def save_to_db(self):
+        db.session.add(self)
+        db.session.commit()
 
 
-# https://marshmallow-sqlalchemy.readthedocs.io/en/latest/index.html#generate-marshmallow-schemas
-class UserSchema(ma.ModelSchema):
-    class Meta:
-        model = User
-        sqla_session = db.session
+class RoleSchema(Schema):
+    id = fields.Int(dump_only=True)
+    name = fields.Str(dump_only=True)
 
 
-class RoleSchema(ma.ModelSchema):
-    class Meta:
-        model = Role
-        sqla_session = db.session
+class UserSchema(Schema):
+    id = fields.Int(dump_only=True)
+    email = fields.Str(required=True)
+    password = fields.Str(required=True, load_only=True)
+    date_created = fields.DateTime(dump_only=True)
+    role = fields.Nested(RoleSchema, only=['name'])
+    # https://marshmallow.readthedocs.io/en/3.0/nesting.html#specifying-which-fields-to-nest
+
+
+class AppointmentSchema(Schema):
+    id = fields.Int(dump_only=True)  # read-only
+    message = fields.Str(missing='')
+    start_time = fields.DateTime(required=True)
+    end_time = fields.DateTime(required=True)
+    booker = fields.Nested(UserSchema, only=['email'])
+
+
+class ScheduleSchema(Schema):
+    id = fields.Int(dump_only=True)  # read-only
+    start_time = fields.DateTime(required=True)
+    end_time = fields.DateTime(required=True)
+    appointments = fields.Nested(AppointmentSchema)
+
+
+class EventSchema(Schema):
+    id = fields.Int(dump_only=True)  # read-only (won't be parsed by webargs)
+    name = fields.Str(required=True)
+    provider = fields.Nested(UserSchema, only=['email'], dump_only=True)  # read-only
+    description = fields.Str(missing='')
+    date_created = fields.DateTime(dump_only=True)  # read-only
+    schedules = fields.Nested(ScheduleSchema, required=True, many=True)

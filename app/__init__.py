@@ -1,12 +1,9 @@
 from flask import Flask, jsonify
 from config import config
 from flask_sqlalchemy import SQLAlchemy
-from flask_marshmallow import Marshmallow
 
 # extensions
-# https://flask-marshmallow.readthedocs.io/en/latest/
 db = SQLAlchemy()
-ma = Marshmallow()
 
 
 def create_app(config_name='default'):
@@ -17,7 +14,6 @@ def create_app(config_name='default'):
     cfg.init_app(app)
 
     db.init_app(app)
-    ma.init_app(app)
 
     from .api import api_blueprint
     app.register_blueprint(api_blueprint)

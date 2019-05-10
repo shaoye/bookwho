@@ -11,12 +11,26 @@ user_args = {
 
 token_args = {
     'auth_header': fields.Str(
-        load_from='Authorization',
+        data_key='Authorization',
         location='headers',
         required=True,
         validate=validate.Regexp(r'^Bearer\s\S+')
     )
 }
+
+
+@use_kwargs(token_args)
+def validate_token(auth_header):
+    token = auth_header.split(' ')[1]
+
+    if BlacklistToken.has_token(token):
+        abort(400, status='fail', message='Revoked token.')
+
+    result, payload = User.decode_token(token, app.config['SECRET_KEY'])
+    if result != 'Success':
+        abort(400, status='fail', message=result)
+
+    return token, payload['sub']
 
 
 class Registration(Resource):
@@ -62,16 +76,8 @@ class Login(Resource):
 
 
 class Logout(Resource):
-    @use_kwargs(token_args)
-    def post(self, auth_header):
-        token = auth_header.split(' ')[1]
-
-        if BlacklistToken.has_token(token):
-            abort(400, status='fail', message='Revoked token.')
-
-        result = User.decode_token(token, app.config['SECRET_KEY'])
-        if result != 'Success':
-            abort(400, status='fail', message=result)
+    def post(self):
+        token, _ = validate_token()
 
         revoked_token = BlacklistToken(token=token)
         revoked_token.save_to_db()
