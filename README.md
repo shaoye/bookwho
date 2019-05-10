@@ -6,5 +6,4 @@ Current Dependencies
 - Flask-RESTful 
 - PyJWT
 - Flask-SQLAlchemy
-- marshmallow
-- webargs
+- marshmallow & webargs
