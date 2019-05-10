@@ -94,6 +94,51 @@ class BlacklistToken(db.Model):
         return True
 
 
+# appointment - schedule 一对多
+# a:
+# .
+# .
+# .
+# .
+# .
+class Event(db.Model):  # eg:  Office Hour / Meetings
+    __tablename__ = 'events'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(255), unique=True, nullable=False)
+    description = db.Column(db.Text())  # description by event provider
+    # user - events 一对多
+    provider_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    provider = db.relationship('User', backref='events')
+
+
+class Schedule(db.Model):  # eg: 6月4日-8点到12点 / 6月5日-14点到18点
+    __tablename__ = 'schedules'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    # day = db.Column(db.Enum('',''), nullable=False)
+    start_time = db.Column(db.DateTime(), nullable=False)
+    end_time = db.Column(db.DateTime(), nullable=False)
+    # event - schedules 一对多
+    event_id = db.Column(db.Integer, db.ForeignKey('events.id'))
+    event = db.relationship('Event', backref='schedules')
+
+
+class Appointment(db.Model):  # eg: 6月4日 8.30到9.30
+    __tablename__ = 'appointments'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    message = db.Column(db.Text())  # booker's message to provider
+    start_time = db.Column(db.DateTime(), nullable=False)
+    end_time = db.Column(db.DateTime(), nullable=False)
+    # schedule - appointments 一对多
+    schedule_id = db.Column(db.Integer, db.ForeignKey('schedules.id'))
+    schedule = db.relationship('Schedule', backref='appointments')
+    # user - appointments 一对多
+    booker_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    booker = db.relationship('User', backref='appointments')
+
+
 # https://marshmallow-sqlalchemy.readthedocs.io/en/latest/index.html#generate-marshmallow-schemas
 class UserSchema(ma.ModelSchema):
     class Meta:
