@@ -21,6 +21,7 @@ class User(db.Model):
         'Event',
         backref='provider',
         cascade='all, delete-orphan',
+        lazy=True,
         order_by='desc(Event.date_created)'
     )
 
@@ -28,6 +29,7 @@ class User(db.Model):
         'Appointment',
         backref='booker',
         cascade='all, delete-orphan',
+        lazy=True,
         order_by='desc(Appointment.start_time)'
     )
 
@@ -80,7 +82,7 @@ class Role(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(255), unique=True, nullable=False)
     # bind `role` attribute to `User`
-    users = db.relationship('User', backref='role')
+    users = db.relationship('User', backref='role', lazy=True)
 
     @staticmethod
     def insert_roles():
@@ -126,6 +128,7 @@ class Event(db.Model):  # eg:  Office Hour / Meetings
         'Schedule',
         backref='event',
         cascade='all, delete-orphan',
+        lazy=False,  # Eager Loading
         order_by='desc(Schedule.start_time)'
     )
 
@@ -147,6 +150,7 @@ class Schedule(db.Model):  # eg: 6月4日-8点到12点 / 6月5日-14点到18点
         'Appointment',
         backref='schedule',
         cascade='all, delete-orphan',
+        lazy=False,
         order_by='desc(Appointment.start_time)'
     )
 
