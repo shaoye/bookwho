@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 import jwt
 from werkzeug.security import generate_password_hash, check_password_hash
-from marshmallow import Schema, fields
+from marshmallow import Schema, fields, validates_schema, ValidationError
 from . import db
 
 
@@ -116,7 +116,7 @@ class Event(db.Model):  # eg:  Office Hour / Meetings
     __tablename__ = 'events'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    name = db.Column(db.String(255), unique=True, nullable=False)
+    name = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text())  # description by event provider
     date_created = db.Column(
         db.DateTime(), default=datetime.utcnow, onupdate=datetime.utcnow
@@ -150,8 +150,8 @@ class Schedule(db.Model):  # eg: 6月4日-8点到12点 / 6月5日-14点到18点
         'Appointment',
         backref='schedule',
         cascade='all, delete-orphan',
-        lazy=False,
-        order_by='desc(Appointment.start_time)'
+        lazy=False,  # Eager Loading
+        order_by='Appointment.start_time'
     )
 
     # https://docs.sqlalchemy.org/en/13/orm/cascades.html#cascades
@@ -159,6 +159,19 @@ class Schedule(db.Model):  # eg: 6月4日-8点到12点 / 6月5日-14点到18点
     def save_to_db(self):
         db.session.add(self)
         db.session.commit()
+
+    @staticmethod
+    def check_conflict(start, end, appointments=None):
+        if not appointments:
+            return False
+        last_valid_start = start
+        for a in appointments:
+            if end < a.start_time and start > last_valid_start:
+                return False
+            last_valid_start = a.end_time
+        if start > last_valid_start:
+            return False
+        return True
 
 
 class Appointment(db.Model):  # eg: 6月4日 8.30到9.30
@@ -187,29 +200,45 @@ class UserSchema(Schema):
     email = fields.Str(required=True)
     password = fields.Str(required=True, load_only=True)
     date_created = fields.DateTime(dump_only=True)
-    role = fields.Nested(RoleSchema, only=['name'])
+    role = fields.Nested(RoleSchema, only=('name',))
     # https://marshmallow.readthedocs.io/en/3.0/nesting.html#specifying-which-fields-to-nest
 
 
 class AppointmentSchema(Schema):
     id = fields.Int(dump_only=True)  # read-only
+    schedule_id = fields.Int(required=True, load_only=True)
     message = fields.Str(missing='')
     start_time = fields.DateTime(required=True)
     end_time = fields.DateTime(required=True)
-    booker = fields.Nested(UserSchema, only=['email'])
+    booker = fields.Nested(UserSchema, only=('email',), dump_only=True)
+    # https://marshmallow.readthedocs.io/en/3.0/quickstart.html#specifying-attribute-names
+    event = fields.Nested(
+        'EventSchema', only=('name', 'provider', 'description'), dump_only=True, attribute='schedule.event')
+
+    #  https://marshmallow.readthedocs.io/en/3.0/extending.html#schema-level-validation
+    @validates_schema
+    def check_date_validation(self, data):
+        if data['start_time'] >= data['end_time']:
+            raise ValidationError('Start must be earlier than End')
 
 
 class ScheduleSchema(Schema):
     id = fields.Int(dump_only=True)  # read-only
     start_time = fields.DateTime(required=True)
     end_time = fields.DateTime(required=True)
-    appointments = fields.Nested(AppointmentSchema)
+    # https://marshmallow.readthedocs.io/en/3.0/api_reference.html#marshmallow.fields.Nested
+    appointments = fields.Nested(AppointmentSchema, dump_only=True, many=True)
+
+    @validates_schema
+    def check_date_validation(self, data):
+        if data['start_time'] >= data['end_time']:
+            raise ValidationError('Start must be earlier than End')
 
 
 class EventSchema(Schema):
     id = fields.Int(dump_only=True)  # read-only (won't be parsed by webargs)
     name = fields.Str(required=True)
-    provider = fields.Nested(UserSchema, only=['email'], dump_only=True)  # read-only
+    provider = fields.Nested(UserSchema, only=('email',), dump_only=True)  # read-only
     description = fields.Str(missing='')
     date_created = fields.DateTime(dump_only=True)  # read-only
     schedules = fields.Nested(ScheduleSchema, required=True, many=True)
